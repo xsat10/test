@@ -992,7 +992,7 @@ jobs:
           EOF
 
       # =================================================
-      # Web2APK – Apply URL, name, icons & keystore (FIXED)
+      # Web2APK – Apply URL, name, icons & keystore (PERBAIKAN)
       # =================================================
       - name: Web2APK - Apply URL, app name, icons, and keystore
         if: env.type == 'web2apk'
@@ -1007,7 +1007,12 @@ jobs:
           grep "WEBSITE_URL" project/app/src/main/java/com/web2apk/app/MainActivity.java
           echo "======================================"
 
-          # --- Cari file ikon di build-assets dengan berbagai ekstensi ---
+          # --- Fungsi untuk memeriksa apakah file adalah PNG ---
+          is_png() {
+            file "$1" | grep -qi PNG
+          }
+
+          # --- Cari file ikon di build-assets ---
           ICON_SRC=""
           for ext in png jpg jpeg webp bmp gif tiff; do
             if [ -f "build-assets/icon.$ext" ]; then
@@ -1016,32 +1021,31 @@ jobs:
             fi
           done
 
+          # --- Proses ikon: konversi ke PNG jika belum ---
           if [ -n "$ICON_SRC" ]; then
             echo "Found icon: $ICON_SRC"
-            # Jika bukan PNG, konversi ke PNG
-            if [[ "$ICON_SRC" != *.png ]]; then
-              echo "Converting $ICON_SRC to PNG..."
-              convert "$ICON_SRC" build-assets/icon.png
-              if [ $? -ne 0 ] || [ ! -f build-assets/icon.png ]; then
-                echo "❌ Konversi gagal, membuat default..."
-                convert -size 512x512 xc:blue build-assets/icon.png
-              fi
-            else
-              # Sudah PNG, tapi cek apakah file yang sama
+            if is_png "$ICON_SRC"; then
+              # Sudah PNG, copy ke build-assets/icon.png jika berbeda
               if [ "$ICON_SRC" != "build-assets/icon.png" ]; then
-                echo "Copying $ICON_SRC to build-assets/icon.png"
                 cp "$ICON_SRC" build-assets/icon.png
               else
-                echo "Icon already at build-assets/icon.png, skipping copy."
+                echo "Icon already at build-assets/icon.png and is valid PNG."
               fi
+            else
+              # Bukan PNG, konversi
+              echo "File $ICON_SRC bukan PNG, mengonversi..."
+              convert "$ICON_SRC" build-assets/icon.png 2>/dev/null || {
+                echo "❌ Konversi gagal, membuat default..."
+                convert -size 512x512 xc:blue build-assets/icon.png
+              }
             fi
           else
             echo "⚠️ No icon found, creating default blue icon..."
             convert -size 512x512 xc:blue build-assets/icon.png
           fi
 
-          # Pastikan file PNG valid
-          if ! file build-assets/icon.png | grep -q PNG; then
+          # --- Pastikan build-assets/icon.png benar-benar PNG ---
+          if ! is_png build-assets/icon.png; then
             echo "❌ File PNG tidak valid, membuat default..."
             convert -size 512x512 xc:blue build-assets/icon.png
           fi
@@ -1109,7 +1113,7 @@ jobs:
           fi
 
       # ==============================================================
-      # Flutter – Generate app icons (FIXED)
+      # Flutter – Generate app icons (sudah diperbaiki)
       # ==============================================================
       - name: Generate Flutter app icons
         if: env.type == 'flutter'
@@ -1117,19 +1121,21 @@ jobs:
           cd flutter-project
           MIPMAP_DIRS="mipmap-hdpi mipmap-mdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi"
 
-          # Fungsi untuk mengonversi file ke PNG jika bukan PNG, dengan penanganan jika src == dst
+          # Fungsi untuk memeriksa apakah file adalah PNG
+          is_png() {
+            file "$1" | grep -qi PNG
+          }
+
+          # Fungsi untuk mengonversi atau copy dengan penanganan src==dst
           convert_to_png() {
             local src="$1"
             local dst="$2"
             if [ -f "$src" ]; then
-              # Jika source dan destination sama, skip
               if [ "$src" = "$dst" ]; then
                 echo "Source and destination are the same, skipping."
                 return 0
               fi
-              # Periksa tipe file
-              if file "$src" | grep -qi PNG; then
-                # Sudah PNG, copy saja
+              if is_png "$src"; then
                 cp "$src" "$dst"
                 return 0
               else
@@ -1144,11 +1150,9 @@ jobs:
           # Cari dan konversi semua file ikon yang bukan PNG
           for dir in $MIPMAP_DIRS; do
             RES_DIR="android/app/src/main/res/$dir"
-            # Cari semua file ic_launcher.* kecuali .png, tapi kita juga periksa .png yang isinya bukan PNG
             find "$RES_DIR" -maxdepth 1 -name "ic_launcher.*" -print0 | while IFS= read -r -d '' file; do
               echo "Processing $file"
               if convert_to_png "$file" "$RES_DIR/ic_launcher.png"; then
-                # Jika konversi berhasil atau sudah PNG, hapus file asli jika berbeda
                 if [ "$file" != "$RES_DIR/ic_launcher.png" ]; then
                   rm -f "$file"
                 fi
@@ -1157,7 +1161,6 @@ jobs:
                 rm -f "$file"
               fi
             done
-            # Lakukan hal yang sama untuk ic_launcher_round.*
             find "$RES_DIR" -maxdepth 1 -name "ic_launcher_round.*" -print0 | while IFS= read -r -d '' file; do
               echo "Processing $file"
               if convert_to_png "$file" "$RES_DIR/ic_launcher_round.png"; then
@@ -1175,7 +1178,7 @@ jobs:
           NEEDS_REGEN=false
           for dir in $MIPMAP_DIRS; do
             PNG_FILE="android/app/src/main/res/$dir/ic_launcher.png"
-            if [ ! -f "$PNG_FILE" ] || ! file "$PNG_FILE" | grep -q PNG || ! identify "$PNG_FILE" &>/dev/null; then
+            if [ ! -f "$PNG_FILE" ] || ! is_png "$PNG_FILE" || ! identify "$PNG_FILE" &>/dev/null; then
               NEEDS_REGEN=true
               break
             fi
@@ -1197,12 +1200,10 @@ jobs:
           ICON_SRC=""
           for ext in png jpg jpeg webp bmp gif tiff; do
             if [ -f "../build-assets/icon.$ext" ]; then
-              # Periksa apakah file tersebut PNG asli
-              if file "../build-assets/icon.$ext" | grep -qi PNG; then
+              if is_png "../build-assets/icon.$ext"; then
                 ICON_SRC="../build-assets/icon.$ext"
                 break
               else
-                # Jika bukan PNG, konversi dulu
                 echo "Mengonversi ../build-assets/icon.$ext ke PNG..."
                 convert "../build-assets/icon.$ext" "../build-assets/icon_temp.png" && ICON_SRC="../build-assets/icon_temp.png"
                 if [ -n "$ICON_SRC" ]; then
