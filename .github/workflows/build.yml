@@ -992,7 +992,7 @@ jobs:
           EOF
 
       # =================================================
-      # Web2APK – Apply URL, name, icons & keystore
+      # Web2APK – Apply URL, name, icons & keystore (FIXED)
       # =================================================
       - name: Web2APK - Apply URL, app name, icons, and keystore
         if: env.type == 'web2apk'
@@ -1027,8 +1027,13 @@ jobs:
                 convert -size 512x512 xc:blue build-assets/icon.png
               fi
             else
-              # Sudah PNG, copy saja
-              cp "$ICON_SRC" build-assets/icon.png
+              # Sudah PNG, tapi cek apakah file yang sama
+              if [ "$ICON_SRC" != "build-assets/icon.png" ]; then
+                echo "Copying $ICON_SRC to build-assets/icon.png"
+                cp "$ICON_SRC" build-assets/icon.png
+              else
+                echo "Icon already at build-assets/icon.png, skipping copy."
+              fi
             fi
           else
             echo "⚠️ No icon found, creating default blue icon..."
@@ -1104,8 +1109,7 @@ jobs:
           fi
 
       # ==============================================================
-      # Flutter – Generate app icons (diperbaiki untuk menangani file
-      #           bernama .png tapi bukan PNG)
+      # Flutter – Generate app icons (FIXED)
       # ==============================================================
       - name: Generate Flutter app icons
         if: env.type == 'flutter'
@@ -1113,11 +1117,16 @@ jobs:
           cd flutter-project
           MIPMAP_DIRS="mipmap-hdpi mipmap-mdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi"
 
-          # Fungsi untuk mengonversi file ke PNG jika bukan PNG
+          # Fungsi untuk mengonversi file ke PNG jika bukan PNG, dengan penanganan jika src == dst
           convert_to_png() {
             local src="$1"
             local dst="$2"
             if [ -f "$src" ]; then
+              # Jika source dan destination sama, skip
+              if [ "$src" = "$dst" ]; then
+                echo "Source and destination are the same, skipping."
+                return 0
+              fi
               # Periksa tipe file
               if file "$src" | grep -qi PNG; then
                 # Sudah PNG, copy saja
